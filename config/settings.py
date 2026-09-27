@@ -58,6 +58,11 @@ if os.environ.get("USE_SQLITE", "").lower() in ("1", "true", "yes"):
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            # BEGIN IMMEDIATE：让写事务在开启时即排队互斥（busy 超时等待），
+            # 使 SQLite 开发/测试后端与 PostgreSQL 行锁的并发语义一致；
+            # 测试库用文件而非共享缓存内存库，否则表锁不应用 busy 超时。
+            "OPTIONS": {"transaction_mode": "IMMEDIATE"},
+            "TEST": {"NAME": BASE_DIR / "test_db.sqlite3"},
         }
     }
 else:

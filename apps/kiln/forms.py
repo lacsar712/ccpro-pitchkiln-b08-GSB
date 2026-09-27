@@ -37,12 +37,21 @@ class PhaseChangeForm(forms.Form):
         choices=FireHearth.PHASE_CHOICES,
         widget=forms.Select(attrs={"class": "field"}),
     )
+    # 乐观并发基线：抽屉渲染时的相位。提交时若库中相位已变，
+    # 服务端拒绝本次切换（并发互斥的一部分，前端防抖不算数）。
+    expected_phase = forms.ChoiceField(
+        label="基准相位",
+        choices=FireHearth.PHASE_CHOICES,
+        required=False,
+        widget=forms.HiddenInput,
+    )
 
     def __init__(self, *args, hearth=None, **kwargs):
         self.hearth = hearth
         super().__init__(*args, **kwargs)
         if hearth is not None and not self.is_bound:
             self.fields["phase"].initial = hearth.phase
+            self.fields["expected_phase"].initial = hearth.phase
 
     def clean_phase(self):
         phase = self.cleaned_data["phase"]

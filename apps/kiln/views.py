@@ -10,11 +10,26 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from .forms import OpenCookRunForm, PhaseChangeForm, ResinLotForm, SoftPointProbeForm
 from .models import CookRun, FireHearth, ResinLot
-from .services.floor_rules import change_hearth_phase
+from .services.floor_rules import (
+    change_hearth_phase,
+    close_run_for_hearth,
+    open_run_for_hearth,
+)
 
 
 def _wants_htmx(request):
     return request.headers.get("HX-Request") == "true"
+
+
+def _validation_text(exc):
+    """从 ValidationError 中取出第一条可读消息。"""
+    if hasattr(exc, "message_dict"):
+        for msgs in exc.message_dict.values():
+            if msgs:
+                return msgs[0]
+    if getattr(exc, "messages", None):
+        return exc.messages[0]
+    return str(exc)
 
 
 def _hearths_for_board():
@@ -96,22 +111,32 @@ def hearth_drawer(request, pk):
 def change_phase(request, pk):
     hearth = get_object_or_404(FireHearth, pk=pk)
     form = PhaseChangeForm(request.POST, hearth=hearth)
+    phase_error = None
+    phase_notice = None
     if form.is_valid():
         try:
-            change_hearth_phase(hearth, form.cleaned_data["phase"])
-            messages.success(request, f"灶牌 {hearth.tag} 相位已更新")
-        except ValidationError as exc:
-            msg = (
-                exc.message_dict.get("phase") if hasattr(exc, "message_dict") else None
+            change_hearth_phase(
+                hearth_id=hearth.pk,
+                new_phase=form.cleaned_data["phase"],
+                expected_phase=form.cleaned_data.get("expected_phase") or None,
             )
-            messages.error(request, msg[0] if msg else str(exc))
+            phase_notice = f"灶牌 {hearth.tag} 相位已更新"
+            messages.success(request, phase_notice)
+        except ValidationError as exc:
+            # 并发被拒 / 业务规则拒绝：事务已回滚，不留半截相位
+            phase_error = _validation_text(exc)
+            messages.error(request, phase_error)
     else:
-        err = form.errors.get("phase")
-        messages.error(request, err[0] if err else "相位切换失败")
+        err = form.errors.get("phase") or form.errors.get("expected_phase")
+        phase_error = err[0] if err else "相位切换失败"
+        messages.error(request, phase_error)
 
     if _wants_htmx(request):
         hearth.refresh_from_db()
-        resp = render(request, "floor/_drawer.html", _drawer_context(hearth))
+        ctx = _drawer_context(hearth)
+        ctx["phase_error"] = phase_error
+        ctx["phase_notice"] = phase_notice
+        resp = render(request, "floor/_drawer.html", ctx)
         resp["HX-Trigger"] = "floor-refresh"
         return resp
     return redirect(f"/?hearth={pk}")
@@ -148,13 +173,11 @@ def open_run(request, pk):
     hearth = get_object_or_404(FireHearth, pk=pk)
     form = OpenCookRunForm(request.POST, hearth=hearth)
     if form.is_valid():
-        run = form.save(commit=False)
-        run.hearth = hearth
-        run.save()
-        if hearth.phase == FireHearth.PHASE_COLD:
-            hearth.phase = FireHearth.PHASE_CHARGING
-            hearth.save(update_fields=["phase"])
-        messages.success(request, "新值守已开灶")
+        try:
+            open_run_for_hearth(hearth_id=hearth.pk, run=form.save(commit=False))
+            messages.success(request, "新值守已开灶")
+        except ValidationError as exc:
+            messages.error(request, _validation_text(exc))
     else:
         for errs in form.errors.values():
             for e in errs:
@@ -173,15 +196,11 @@ def open_run(request, pk):
 @require_POST
 def close_run(request, pk):
     hearth = get_object_or_404(FireHearth, pk=pk)
-    open_run = hearth.open_run()
-    if open_run is None:
-        messages.error(request, "没有进行中的值守可收灶")
-    else:
-        open_run.closedAt = timezone.now()
-        open_run.save(update_fields=["closedAt"])
-        hearth.phase = FireHearth.PHASE_COLD
-        hearth.save(update_fields=["phase"])
+    try:
+        close_run_for_hearth(hearth_id=hearth.pk)
         messages.success(request, "值守已收灶，灶台回冷灶")
+    except ValidationError as exc:
+        messages.error(request, _validation_text(exc))
 
     if _wants_htmx(request):
         hearth.refresh_from_db()

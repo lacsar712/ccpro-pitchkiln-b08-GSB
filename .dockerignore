@@ -6,3 +6,4 @@ venv
 staticfiles
 .env
 *.md
+*.sqlite3
