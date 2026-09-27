@@ -1,4 +1,11 @@
 <div class="drawer-panel">
+  {% if drawer_toasts and messages %}
+  <ul class="toast-rail drawer-toasts">
+    {% for message in messages %}
+    <li class="toast {{ message.tags }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   <header class="drawer-top">
     <div>
       <p class="drawer-kicker">过道 {{ hearth.lane }}</p>

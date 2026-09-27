@@ -32,6 +32,9 @@ class ResinLotForm(forms.ModelForm):
 
 
 class PhaseChangeForm(forms.Form):
+    # 提交者打开抽屉时看到的相位：后端据此拒绝并发落败的那一笔。
+    expected_phase = forms.CharField(widget=forms.HiddenInput())
+
     phase = forms.ChoiceField(
         label="相位",
         choices=FireHearth.PHASE_CHOICES,
@@ -43,6 +46,14 @@ class PhaseChangeForm(forms.Form):
         super().__init__(*args, **kwargs)
         if hearth is not None and not self.is_bound:
             self.fields["phase"].initial = hearth.phase
+            self.fields["expected_phase"].initial = hearth.phase
+
+    def clean_expected_phase(self):
+        expected = self.cleaned_data.get("expected_phase")
+        valid = {key for key, _ in FireHearth.PHASE_CHOICES}
+        if expected not in valid:
+            raise forms.ValidationError("相位基准已失效，请刷新抽屉后重试。")
+        return expected
 
     def clean_phase(self):
         phase = self.cleaned_data["phase"]

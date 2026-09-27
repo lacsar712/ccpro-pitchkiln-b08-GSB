@@ -7,6 +7,19 @@
   <title>{% block title %}灶台值守看板{% endblock %} · PitchKiln</title>
   <link rel="stylesheet" href="{% static 'css/style.css' %}">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    // 前端防抖仅为体验兜底：真正的互斥在后端（条件 UPDATE 即 CAS），
+    // 见 apps/kiln/services/floor_rules.py。
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (!form.matches(".stack-form")) return;
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      // 请求结束（含失败/被拒后抽屉重渲）恢复按钮，允许改选后重试。
+      setTimeout(function () { btn.disabled = false; }, 1500);
+    });
+  </script>
 </head>
 <body class="{% block body_class %}ops-shell{% endblock %}">
   {% if user.is_authenticated %}

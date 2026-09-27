@@ -104,6 +104,13 @@ def ensure_seed_data():
         softPointC=Decimal("108.00"),
         samplerName="值守阿坤",
     )
+    # 升温灶保留一条 ≤95℃ 探针：并发复现时「升温→出胶」亦为合法迁移。
+    SoftPointProbe.objects.create(
+        run=run2,
+        sampledAt=now - timezone.timedelta(minutes=20),
+        softPointC=Decimal("94.20"),
+        samplerName="值守阿坤",
+    )
 
     run3 = CookRun.objects.create(
         hearth=h3,
